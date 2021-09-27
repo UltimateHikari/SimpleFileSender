@@ -7,6 +7,8 @@ import java.io.IOException;
 import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -17,15 +19,16 @@ public class ServerInstance implements Runnable {
     private final Socket client;
     private boolean isReceiving = true;
 
-    private final static int SERVICE_DATA_LEN = 5;
+    private final static int SERVICE_DATA_LEN = 13;
     private final static int SERVICE_CHUNK_LEN = 4;
-    private final static int COUNTER_FREQUENCY = 5;
+    private final static int COUNTER_FREQUENCY = 3;
     private final static int KB = 1024;
     private final static String location = "./uploads";
 
     private byte chunkSize = 100;
     private int filenameLength;
     private String filename;
+    private long fileSize;
 
     private FileOutputStream file;
     private BufferedInputStream inputStream;
@@ -36,6 +39,7 @@ public class ServerInstance implements Runnable {
 
     private int chunksReceived = 0;
     private int chunksCounted = 0;
+    private int lastChunkSize = 0;
     private int counterCalls = 0;
 
     private void log(String s){
@@ -62,6 +66,7 @@ public class ServerInstance implements Runnable {
         verifyMetadataRead(buf, SERVICE_DATA_LEN);
         ByteBuffer byteBuffer = ByteBuffer.wrap(buf);
         filenameLength = byteBuffer.getInt();
+        fileSize = byteBuffer.getLong();
         chunkSize = byteBuffer.get();
     }
 
@@ -80,10 +85,13 @@ public class ServerInstance implements Runnable {
         inputBuffer = new byte [chunkByteSize()];
         inputStream = new BufferedInputStream(client.getInputStream());
         Runnable counter = () -> {
-            counterCalls++;
+            counterCalls++; //TODO print even on fast files
             int delta = chunksReceived - chunksCounted;
             chunksCounted = chunksReceived;
             log(formatSpeed(delta));
+            if(!isReceiving){
+                canceller.run();
+            }
         };
         ScheduledFuture<?> counterHandle =
                 scheduler.scheduleAtFixedRate(counter, COUNTER_FREQUENCY, COUNTER_FREQUENCY, SECONDS);
@@ -93,18 +101,20 @@ public class ServerInstance implements Runnable {
 
     private String formatSpeed(int delta) {
         return client.getLocalPort() + ": speed " +
-                delta*chunkByteSize()/COUNTER_FREQUENCY + " B/s, average " +
-                chunksCounted*chunkByteSize()/(COUNTER_FREQUENCY*counterCalls) + "\n";
+                (delta*chunkByteSize() + lastChunkSize)/COUNTER_FREQUENCY + " B/s, average " +
+                (chunksCounted*chunkByteSize() + lastChunkSize)/(COUNTER_FREQUENCY*counterCalls) + "\n";
     }
 
     private void freeResources(){
         try {
-            scheduler.execute(canceller); // lazy solution
+            log("closing");
+            //scheduler.execute(canceller); // lazy solution
             file.close();
             inputStream.close();
             client.close();
+            scheduler.awaitTermination(COUNTER_FREQUENCY, SECONDS);
             scheduler.shutdown();
-        } catch (IOException e) {
+        } catch (IOException | InterruptedException e) {
             e.printStackTrace();
         }
     }
@@ -115,11 +125,14 @@ public class ServerInstance implements Runnable {
         ByteBuffer byteBuffer = ByteBuffer.wrap(buf);
         int actualChunkBytes = byteBuffer.getInt();
         if(inputStream.read(inputBuffer) < actualChunkBytes){
-            throw new IOException("read less than " + actualChunkBytes);
+            throw new IOException("read: " + actualChunkBytes + " < " + chunkByteSize());
         }
-        chunksReceived++;
+
         if(actualChunkBytes < chunkByteSize()){
             isReceiving = false;
+            lastChunkSize = actualChunkBytes;
+        } else {
+            chunksReceived++;
         }
         return actualChunkBytes;
     }
@@ -144,7 +157,13 @@ public class ServerInstance implements Runnable {
         }
     }
 
-    private void verifyReceivedFile() {
-        log("file received");//TODO
+    private void verifyReceivedFile() throws IOException {
+        long savedSize = Files.size(Path.of(location + "/" + filename));
+        log("verifying " + savedSize + " against " + fileSize);
+        if(savedSize == fileSize){
+            client.getOutputStream().write("File saved".getBytes(StandardCharsets.UTF_8));
+        } else {
+            client.getOutputStream().write("Filesize mismatch".getBytes(StandardCharsets.UTF_8));
+        }
     }
 }

@@ -5,9 +5,12 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 public class SimpleClient {
     private String filename;
+    private long fileSize;
 
     private Socket client;
     private FileInputStream file;
@@ -15,7 +18,7 @@ public class SimpleClient {
     private byte [] outputBuffer;
 
     private final byte chunkSize = 100;
-    private final static int SERVICE_DATA_LEN = 5;
+    private final static int SERVICE_DATA_LEN = 13;
     private final static int SERVICE_CHUNK_LEN = 4;
     private boolean isSending = true;
     private final static int KB = 1024;
@@ -33,6 +36,7 @@ public class SimpleClient {
     private void initResources(String path, String hostname, Integer port) throws IOException {
         File filePath = new File(path);
         filename = filePath.getName();
+        fileSize = Files.size(Path.of(path));
         file = new FileInputStream(path);
 
         client = new Socket();
@@ -45,6 +49,7 @@ public class SimpleClient {
     private void sendMetadata() throws IOException {
         ByteBuffer byteBuffer = ByteBuffer.allocate(SERVICE_DATA_LEN);
         byteBuffer.putInt(filename.length());
+        byteBuffer.putLong(fileSize);
         byteBuffer.put(chunkSize);
         outputStream.write(byteBuffer.array());
         outputStream.write(filename.getBytes(StandardCharsets.UTF_8));
@@ -68,7 +73,16 @@ public class SimpleClient {
         while(isSending){
             sendChunk(readChunk());
         }
+        getTransferStatus();
         freeResources();
+    }
+
+    private void getTransferStatus() throws IOException {
+        outputStream.flush();
+        String status = new String(
+                client.getInputStream().readAllBytes(),
+                StandardCharsets.UTF_8);
+        log(status);
     }
 
     private void freeResources() throws IOException {
