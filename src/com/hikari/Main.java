@@ -14,7 +14,7 @@ public class Main {
             "latter args needed for c as client;\n" +
             "args order matters.";
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args){
         if(args.length == 0){
             System.out.println(HELP_MSG);
             return;

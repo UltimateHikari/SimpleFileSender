@@ -21,7 +21,7 @@ public class ServerInstance implements Runnable {
 
     private final static int SERVICE_DATA_LEN = 13;
     private final static int SERVICE_CHUNK_LEN = 4;
-    private final static int COUNTER_FREQUENCY = 3;
+    private final static int COUNTER_FREQUENCY = 1;
     private final static int KB = 1024;
     private final static String location = "./uploads";
 
@@ -121,11 +121,20 @@ public class ServerInstance implements Runnable {
 
     private int receiveChunk() throws IOException {
         byte [] buf = new byte[SERVICE_CHUNK_LEN];
-        verifyMetadataRead(buf, SERVICE_CHUNK_LEN);
+        if(inputStream.read(buf) < SERVICE_CHUNK_LEN){
+            throw new IOException("got corrupted chunksize");
+        }
         ByteBuffer byteBuffer = ByteBuffer.wrap(buf);
         int actualChunkBytes = byteBuffer.getInt();
-        if(inputStream.read(inputBuffer) < actualChunkBytes){
-            throw new IOException("read: " + actualChunkBytes + " < " + chunkByteSize());
+        int receivedBytes = 0;
+        while(receivedBytes < actualChunkBytes){
+            int readRes = inputStream.read(inputBuffer,
+                    receivedBytes,
+                    inputBuffer.length - receivedBytes);
+            if(readRes == -1){
+                throw new IOException("End of stream on read: " + receivedBytes + " < " + actualChunkBytes);
+            }
+            receivedBytes += readRes;
         }
 
         if(actualChunkBytes < chunkByteSize()){

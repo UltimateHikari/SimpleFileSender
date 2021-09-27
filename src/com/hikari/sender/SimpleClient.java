@@ -48,26 +48,27 @@ public class SimpleClient {
 
     private void sendMetadata() throws IOException {
         ByteBuffer byteBuffer = ByteBuffer.allocate(SERVICE_DATA_LEN);
-        byteBuffer.putInt(filename.length());
+        byte [] bytename = filename.getBytes(StandardCharsets.UTF_8);
+        byteBuffer.putInt(bytename.length);
         byteBuffer.putLong(fileSize);
         byteBuffer.put(chunkSize);
         outputStream.write(byteBuffer.array());
-        outputStream.write(filename.getBytes(StandardCharsets.UTF_8));
+        outputStream.write(bytename);
     }
 
     private int readChunk() throws IOException {
         return file.read(outputBuffer);
     }
-    private void sendChunk(int actualBytesRead) throws IOException {
-        log(actualBytesRead + " ");
-        outputStream.write(ByteBuffer.allocate(SERVICE_CHUNK_LEN).putInt(actualBytesRead).array());
+    private void sendChunk(int actualBytesRead) throws IOException{
+        byte [] buf = ByteBuffer.allocate(SERVICE_CHUNK_LEN).putInt(actualBytesRead).array();
+        outputStream.write(buf);
         outputStream.write(outputBuffer, 0, actualBytesRead);
         if(actualBytesRead < chunkByteSize()){
             isSending = false;
         }
     }
 
-    public void send(String path, String hostname, Integer port) throws IOException {
+    public void send(String path, String hostname, Integer port) throws IOException{
         initResources(path, hostname, port);
         sendMetadata();
         while(isSending){
