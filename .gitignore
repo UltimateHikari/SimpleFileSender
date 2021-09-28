@@ -1,3 +1,4 @@
 .idea/*
-out/*
+out/production/*
+out/debug/*
 uploads/*
