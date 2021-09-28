@@ -31,6 +31,8 @@ public class Main {
         } else if(args[0].equals("s") && args.length == 2){
             SimpleServer server = new SimpleServer(2, Integer.valueOf(args[1]));
             server.run();
+        } else {
+            System.out.println("need more args");
         }
     }
 }
