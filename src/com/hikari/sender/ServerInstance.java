@@ -102,7 +102,7 @@ public class ServerInstance implements Runnable {
     private String formatSpeed(int delta) {
         return client.getLocalPort() + ": speed " +
                 (delta*chunkByteSize() + lastChunkSize)/COUNTER_FREQUENCY + " B/s, average " +
-                (chunksCounted*chunkByteSize() + lastChunkSize)/(COUNTER_FREQUENCY*counterCalls) + "\n";
+                (chunksCounted*chunkByteSize() + lastChunkSize)/(COUNTER_FREQUENCY*counterCalls) ;
     }
 
     private void freeResources(){
