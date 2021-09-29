@@ -62,9 +62,11 @@ public class SimpleClient {
     private void sendChunk(int actualBytesRead) throws IOException{
         byte [] buf = ByteBuffer.allocate(SERVICE_CHUNK_LEN).putInt(actualBytesRead).array();
         outputStream.write(buf);
-        outputStream.write(outputBuffer, 0, actualBytesRead);
         if(actualBytesRead < chunkByteSize()){
             isSending = false;
+            if(actualBytesRead > 0){
+                outputStream.write(outputBuffer, 0, actualBytesRead);
+            }
         }
     }
 
