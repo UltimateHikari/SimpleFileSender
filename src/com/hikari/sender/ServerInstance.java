@@ -17,22 +17,15 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 
 public class ServerInstance implements Runnable {
     private final Socket client;
-    private boolean isReceiving = true;
-
-    private final static int SERVICE_DATA_LEN = 13;
-    private final static int SERVICE_CHUNK_LEN = 4;
-    private final static int COUNTER_FREQUENCY = 1;
-    private final static int KB = 1024;
-    private final static String location = "./uploads";
-
-    private byte chunkSize = 100;
-    private int filenameLength;
-    private String filename;
-    private long fileSize;
-
     private FileOutputStream file;
     private BufferedInputStream inputStream;
     private byte [] inputBuffer;
+    private Metadata mdata = new Metadata();
+
+    private boolean isReceiving = true;
+    private final static int COUNTER_FREQUENCY = 1;
+
+
     private final ScheduledExecutorService scheduler =
             Executors.newScheduledThreadPool(1);
     private Runnable canceller;
@@ -46,46 +39,18 @@ public class ServerInstance implements Runnable {
         System.out.println("SWEWER: " + s);
     }
 
-    private int chunkByteSize(){
-        //obvious upper limit is 255kb per chunk
-        return chunkSize*KB;
-    }
-
     public ServerInstance(Socket accept) {
         client = accept;
     }
 
-    private void verifyMetadataRead(byte [] buf, int expected) throws IOException {
-        if (client.getInputStream().read(buf) < expected){
-            throw new IOException("Corrupted metadata, can't initiate");
-        }
-    }
-
-    private void fetchServiceInfo() throws IOException {
-        byte [] buf = new byte[SERVICE_DATA_LEN];
-        verifyMetadataRead(buf, SERVICE_DATA_LEN);
-        ByteBuffer byteBuffer = ByteBuffer.wrap(buf);
-        filenameLength = byteBuffer.getInt();
-        fileSize = byteBuffer.getLong();
-        chunkSize = byteBuffer.get();
-    }
-
-    private void fetchMetadata() throws IOException {
-        fetchServiceInfo();
-        byte [] buf = new byte[filenameLength];
-        verifyMetadataRead(buf, filenameLength);
-        filename = new String(buf, StandardCharsets.UTF_8);
-        log("Ready to receive " + filename + " on " + client.getLocalPort());
-    }
-
     private void initResources() throws IOException {
-        File locDir = new File(location);
+        File locDir = new File(Metadata.LOCATION);
         locDir.mkdir();
-        file = new FileOutputStream(location + "/"+ filename);
-        inputBuffer = new byte [chunkByteSize()];
+        file = new FileOutputStream(mdata.getPath());
+        inputBuffer = new byte [mdata.chunkByteSize()];
         inputStream = new BufferedInputStream(client.getInputStream());
         Runnable counter = () -> {
-            counterCalls++; //TODO print even on fast files
+            counterCalls++;
             int delta = chunksReceived - chunksCounted;
             chunksCounted = chunksReceived;
             log(formatSpeed(delta));
@@ -100,9 +65,10 @@ public class ServerInstance implements Runnable {
     }
 
     private String formatSpeed(int delta) {
+        int cbs = mdata.chunkByteSize();
         return client.getLocalPort() + ": speed " +
-                (delta*chunkByteSize() + lastChunkSize)/COUNTER_FREQUENCY + " B/s, average " +
-                (chunksCounted*chunkByteSize() + lastChunkSize)/(COUNTER_FREQUENCY*counterCalls) ;
+                (delta*cbs + lastChunkSize)/COUNTER_FREQUENCY + " B/s, average " +
+                (chunksCounted*cbs + lastChunkSize)/(COUNTER_FREQUENCY*counterCalls) ;
     }
 
     private void freeResources(){
@@ -120,8 +86,8 @@ public class ServerInstance implements Runnable {
     }
 
     private int receiveChunk() throws IOException {
-        byte [] buf = new byte[SERVICE_CHUNK_LEN];
-        if(inputStream.read(buf) < SERVICE_CHUNK_LEN){
+        byte [] buf = new byte[Metadata.SERVICE_CHUNK_LEN];
+        if(inputStream.read(buf) < Metadata.SERVICE_CHUNK_LEN){
             throw new IOException("got corrupted chunksize");
         }
         ByteBuffer byteBuffer = ByteBuffer.wrap(buf);
@@ -137,7 +103,7 @@ public class ServerInstance implements Runnable {
             receivedBytes += readRes;
         }
 
-        if(actualChunkBytes < chunkByteSize()){
+        if(actualChunkBytes < mdata.chunkByteSize()){
             isReceiving = false;
             lastChunkSize = actualChunkBytes;
         } else {
@@ -153,7 +119,8 @@ public class ServerInstance implements Runnable {
     @Override
     public void run() {
         try {
-            fetchMetadata();
+            mdata.fetchMetadata(client.getInputStream());
+            log("Ready to receive to" + mdata.getPath() + " on " + client.getLocalPort());
             initResources();
             while (isReceiving) {
                 writeChunk(receiveChunk());
@@ -167,9 +134,8 @@ public class ServerInstance implements Runnable {
     }
 
     private void verifyReceivedFile() throws IOException {
-        long savedSize = Files.size(Path.of(location + "/" + filename));
-        log("verifying " + savedSize + " against " + fileSize);
-        if(savedSize == fileSize){
+        long savedSize = Files.size(Path.of(mdata.getPath()));
+        if(mdata.verifyFileSize(savedSize)){
             client.getOutputStream().write("File saved".getBytes(StandardCharsets.UTF_8));
         } else {
             client.getOutputStream().write("Filesize mismatch".getBytes(StandardCharsets.UTF_8));

@@ -9,70 +9,47 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 public class SimpleClient {
-    private String filename;
-    private long fileSize;
-
     private Socket client;
     private FileInputStream file;
     private BufferedOutputStream outputStream;
     private byte [] outputBuffer;
+    private Metadata mdata;
 
-    private final byte chunkSize = 100;
-    private final static int SERVICE_DATA_LEN = 13;
-    private final static int SERVICE_CHUNK_LEN = 4;
     private boolean isSending = true;
-    private final static int KB = 1024;
 
     private void log(String s){
         System.out.println("KLUEND: " + s);
     }
 
-
-    private int chunkByteSize(){
-        //obvious upper limit is 255kb per chunk
-        return chunkSize*KB;
-    }
-
     private void initResources(String path, String hostname, Integer port) throws IOException {
         File filePath = new File(path);
-        filename = filePath.getName();
-        fileSize = Files.size(Path.of(path));
+        mdata = new Metadata(filePath.getName(), Files.size(Path.of(path)));
+
         file = new FileInputStream(path);
 
         client = new Socket();
         client.connect(new InetSocketAddress(hostname, port));
 
-        outputBuffer = new byte [chunkByteSize()];
+        outputBuffer = new byte [mdata.chunkByteSize()];
         outputStream = new BufferedOutputStream(client.getOutputStream());
-    }
-
-    private void sendMetadata() throws IOException {
-        ByteBuffer byteBuffer = ByteBuffer.allocate(SERVICE_DATA_LEN);
-        byte [] bytename = filename.getBytes(StandardCharsets.UTF_8);
-        byteBuffer.putInt(bytename.length);
-        byteBuffer.putLong(fileSize);
-        byteBuffer.put(chunkSize);
-        outputStream.write(byteBuffer.array());
-        outputStream.write(bytename);
     }
 
     private int readChunk() throws IOException {
         return file.read(outputBuffer);
     }
     private void sendChunk(int actualBytesRead) throws IOException{
-        byte [] buf = ByteBuffer.allocate(SERVICE_CHUNK_LEN).putInt(actualBytesRead).array();
+        byte [] buf = ByteBuffer.allocate(Metadata.SERVICE_CHUNK_LEN).putInt(actualBytesRead).array();
         outputStream.write(buf);
-        if(actualBytesRead < chunkByteSize()){
+        log(" " + actualBytesRead);
+        if(actualBytesRead < mdata.chunkByteSize()){
             isSending = false;
-            if(actualBytesRead > 0){
-                outputStream.write(outputBuffer, 0, actualBytesRead);
-            }
         }
+        outputStream.write(outputBuffer, 0, actualBytesRead);
     }
 
     public void send(String path, String hostname, Integer port) throws IOException{
         initResources(path, hostname, port);
-        sendMetadata();
+        mdata.sendMetadata(outputStream);
         while(isSending){
             sendChunk(readChunk());
         }
