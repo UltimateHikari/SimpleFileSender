@@ -11,7 +11,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 
@@ -20,20 +19,11 @@ public class ServerInstance implements Runnable {
     private FileOutputStream file;
     private BufferedInputStream inputStream;
     private byte [] inputBuffer;
-    private Metadata mdata = new Metadata();
-
-    private boolean isReceiving = true;
-    private final static int COUNTER_FREQUENCY = 1;
-
+    private final Metadata mdata = new Metadata();
+    private Ticker ticker;
 
     private final ScheduledExecutorService scheduler =
             Executors.newScheduledThreadPool(1);
-    private Runnable canceller;
-
-    private int chunksReceived = 0;
-    private int chunksCounted = 0;
-    private int lastChunkSize = 0;
-    private int counterCalls = 0;
 
     private void log(String s){
         System.out.println("SWEWER: " + s);
@@ -49,26 +39,8 @@ public class ServerInstance implements Runnable {
         file = new FileOutputStream(mdata.getPath());
         inputBuffer = new byte [mdata.chunkByteSize()];
         inputStream = new BufferedInputStream(client.getInputStream());
-        Runnable counter = () -> {
-            counterCalls++;
-            int delta = chunksReceived - chunksCounted;
-            chunksCounted = chunksReceived;
-            log(formatSpeed(delta));
-            if(!isReceiving){
-                canceller.run();
-            }
-        };
-        ScheduledFuture<?> counterHandle =
-                scheduler.scheduleAtFixedRate(counter, COUNTER_FREQUENCY, COUNTER_FREQUENCY, SECONDS);
-        canceller = () -> counterHandle.cancel(false);
-
-    }
-
-    private String formatSpeed(int delta) {
-        int cbs = mdata.chunkByteSize();
-        return client.getLocalPort() + ": speed " +
-                (delta*cbs + lastChunkSize)/COUNTER_FREQUENCY + " B/s, average " +
-                (chunksCounted*cbs + lastChunkSize)/(COUNTER_FREQUENCY*counterCalls) ;
+        ticker = new Ticker(mdata.chunkByteSize(), "SWEWER on port " + client.getLocalPort());
+        ticker.start(scheduler);
     }
 
     private void freeResources(){
@@ -78,7 +50,7 @@ public class ServerInstance implements Runnable {
             file.close();
             inputStream.close();
             client.close();
-            scheduler.awaitTermination(COUNTER_FREQUENCY, SECONDS);
+            scheduler.awaitTermination(Ticker.COUNTER_FREQUENCY, SECONDS);
             scheduler.shutdown();
         } catch (IOException | InterruptedException e) {
             e.printStackTrace();
@@ -104,10 +76,9 @@ public class ServerInstance implements Runnable {
         }
 
         if(actualChunkBytes < mdata.chunkByteSize()){
-            isReceiving = false;
-            lastChunkSize = actualChunkBytes;
+            ticker.stopReceiving(actualChunkBytes);
         } else {
-            chunksReceived++;
+            ticker.tickChunk();
         }
         return actualChunkBytes;
     }
@@ -122,7 +93,7 @@ public class ServerInstance implements Runnable {
             mdata.fetchMetadata(client.getInputStream());
             log("Ready to receive to" + mdata.getPath() + " on " + client.getLocalPort());
             initResources();
-            while (isReceiving) {
+            while (ticker.isReceiving()) {
                 writeChunk(receiveChunk());
             }
             verifyReceivedFile();

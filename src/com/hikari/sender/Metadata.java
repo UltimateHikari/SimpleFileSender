@@ -1,6 +1,5 @@
 package com.hikari.sender;
 
-import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.io.InputStream;

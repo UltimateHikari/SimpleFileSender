@@ -3,7 +3,6 @@ package com.hikari;
 import com.hikari.sender.SimpleClient;
 import com.hikari.sender.SimpleServer;
 
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.Arrays;
 
@@ -29,7 +28,7 @@ public class Main {
                 e.printStackTrace();
             }
         } else if(args[0].equals("s") && args.length == 2){
-            SimpleServer server = new SimpleServer(2, Integer.valueOf(args[1]));
+            SimpleServer server = new SimpleServer(2, Integer.parseInt(args[1]));
             server.run();
         } else {
             System.out.println("need more args");
