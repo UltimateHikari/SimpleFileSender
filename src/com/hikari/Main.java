@@ -4,6 +4,7 @@ import com.hikari.sender.SimpleClient;
 import com.hikari.sender.SimpleServer;
 
 import java.io.IOException;
+import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 
 public class Main {
@@ -24,7 +25,7 @@ public class Main {
             System.out.println("launching client for " + path);
             try {
                 client.send(path, args[2], Integer.valueOf(args[1]));
-            } catch (IOException e) {
+            } catch (IOException | NoSuchAlgorithmException e) {
                 e.printStackTrace();
             }
         } else if(args[0].equals("s") && args.length == 2){

@@ -9,6 +9,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.NoSuchAlgorithmException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 
@@ -21,6 +22,7 @@ public class ServerInstance implements Runnable {
     private byte [] inputBuffer;
     private final Metadata mdata = new Metadata();
     private Ticker ticker;
+    byte [] hash;
 
     private final ScheduledExecutorService scheduler =
             Executors.newScheduledThreadPool(1);
@@ -29,7 +31,7 @@ public class ServerInstance implements Runnable {
         System.out.println("SWEWER: " + s);
     }
 
-    public ServerInstance(Socket accept) {
+    public ServerInstance(Socket accept) throws NoSuchAlgorithmException {
         client = accept;
     }
 
@@ -65,15 +67,18 @@ public class ServerInstance implements Runnable {
         ByteBuffer byteBuffer = ByteBuffer.wrap(buf);
         int actualChunkBytes = byteBuffer.getInt();
         int receivedBytes = 0;
+        //log(actualChunkBytes + "");
         while(receivedBytes < actualChunkBytes){
             int readRes = inputStream.read(inputBuffer,
                     receivedBytes,
-                    inputBuffer.length - receivedBytes);
+                    actualChunkBytes - receivedBytes);
             if(readRes == -1){
                 throw new IOException("End of stream on read: " + receivedBytes + " < " + actualChunkBytes);
             }
             receivedBytes += readRes;
         }
+
+        mdata.updateDigest(inputBuffer, actualChunkBytes);
 
         if(actualChunkBytes < mdata.chunkByteSize()){
             ticker.stopReceiving(actualChunkBytes);
@@ -96,6 +101,7 @@ public class ServerInstance implements Runnable {
             while (ticker.isReceiving()) {
                 writeChunk(receiveChunk());
             }
+            mdata.fetchHash(inputStream);
             verifyReceivedFile();
         }catch (Exception e){
             e.printStackTrace();
@@ -106,7 +112,7 @@ public class ServerInstance implements Runnable {
 
     private void verifyReceivedFile() throws IOException {
         long savedSize = Files.size(Path.of(mdata.getPath()));
-        if(mdata.verifyFileSize(savedSize)){
+        if(mdata.verifyFileSize(savedSize) && mdata.verifyMD5()){
             client.getOutputStream().write("File saved".getBytes(StandardCharsets.UTF_8));
         } else {
             client.getOutputStream().write("Filesize mismatch".getBytes(StandardCharsets.UTF_8));

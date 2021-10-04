@@ -2,13 +2,13 @@ package com.hikari.sender;
 
 import java.io.IOException;
 import java.net.ServerSocket;
+import java.security.NoSuchAlgorithmException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.logging.Logger;
 
 public class SimpleServer implements Runnable{
-    private int nThreads;
-    private int port;
+    private final int nThreads;
+    private final int port;
 
     private void log(String s){
         System.out.println(s);
@@ -31,7 +31,7 @@ public class SimpleServer implements Runnable{
                 log("New client connected");
                 pool.execute(serverInstance);
             }
-        } catch (IOException e) {
+        } catch (IOException | NoSuchAlgorithmException e) {
             e.printStackTrace();
         }
     }

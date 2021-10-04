@@ -7,6 +7,8 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 public class SimpleClient {
     private Socket client;
@@ -21,7 +23,7 @@ public class SimpleClient {
         System.out.println("KLUEND: " + s);
     }
 
-    private void initResources(String path, String hostname, Integer port) throws IOException {
+    private void initResources(String path, String hostname, Integer port) throws IOException, NoSuchAlgorithmException {
         File filePath = new File(path);
         mdata = new Metadata(filePath.getName(), Files.size(Path.of(path)));
 
@@ -40,25 +42,26 @@ public class SimpleClient {
     private void sendChunk(int actualBytesRead) throws IOException{
         byte [] buf = ByteBuffer.allocate(Metadata.SERVICE_CHUNK_LEN).putInt(actualBytesRead).array();
         outputStream.write(buf);
-        log(" " + actualBytesRead);
+        //log(" " + actualBytesRead);
         if(actualBytesRead < mdata.chunkByteSize()){
             isSending = false;
         }
+        mdata.updateDigest(outputBuffer, actualBytesRead);
         outputStream.write(outputBuffer, 0, actualBytesRead);
     }
 
-    public void send(String path, String hostname, Integer port) throws IOException{
+    public void send(String path, String hostname, Integer port) throws IOException, NoSuchAlgorithmException {
         initResources(path, hostname, port);
         mdata.sendMetadata(outputStream);
         while(isSending){
             sendChunk(readChunk());
         }
+        mdata.sendHash(outputStream);
         getTransferStatus();
         freeResources();
     }
 
     private void getTransferStatus() throws IOException {
-        outputStream.flush();
         String status = new String(
                 client.getInputStream().readAllBytes(),
                 StandardCharsets.UTF_8);
@@ -70,5 +73,4 @@ public class SimpleClient {
         outputStream.close();
         client.close();
     }
-
 }
